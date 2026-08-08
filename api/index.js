@@ -26,7 +26,7 @@ async function saveThreadData(threadId, data) {
 
 async function incrementMessageCount(threadId, userId, userName = "User") {
 	const data = await getThreadData(threadId);
-	
+
 	let member = data.members.find(m => m.userId === userId);
 	if (member) {
 		member.count += 1;
@@ -41,10 +41,10 @@ async function incrementMessageCount(threadId, userId, userName = "User") {
 		};
 		data.members.push(member);
 	}
-	
+
 	data.totalMessages += 1;
 	data.lastActivity = Date.now();
-	
+
 	await saveThreadData(threadId, data);
 	return member;
 }
@@ -58,12 +58,15 @@ async function getRanking(threadId, limit = 20) {
 			...m,
 			rank: i + 1
 		}));
-	
+
 	return {
 		threadId,
 		totalMessages: data.totalMessages,
 		totalMembers: data.members.length,
 		activeMembers: sorted.length,
+		// Depuis quand ce groupe est suivi / dernière activité enregistrée
+		createdAt: data.createdAt,
+		lastActivity: data.lastActivity,
 		top: sorted.slice(0, limit),
 		full: sorted
 	};
@@ -74,7 +77,7 @@ async function getUserRank(threadId, userId) {
 	const sorted = data.members
 		.filter(m => m.count > 0)
 		.sort((a, b) => b.count - a.count);
-	
+
 	const user = data.members.find(m => m.userId === userId);
 	if (!user) {
 		return {
@@ -83,7 +86,7 @@ async function getUserRank(threadId, userId) {
 			message: "User not found in this thread"
 		};
 	}
-	
+
 	const rank = sorted.findIndex(m => m.userId === userId) + 1;
 	return {
 		userId: user.userId,
@@ -94,6 +97,7 @@ async function getUserRank(threadId, userId) {
 		totalMessages: data.totalMessages,
 		firstMessage: user.firstMessage,
 		lastMessage: user.lastMessage,
+		createdAt: data.createdAt,
 		found: true
 	};
 }
@@ -115,11 +119,11 @@ async function getThreadStats(threadId) {
 	const sorted = data.members
 		.filter(m => m.count > 0)
 		.sort((a, b) => b.count - a.count);
-	
-	const avgMessages = data.members.length > 0 
-		? Math.round(data.totalMessages / data.members.length) 
+
+	const avgMessages = data.members.length > 0
+		? Math.round(data.totalMessages / data.members.length)
 		: 0;
-	
+
 	return {
 		threadId,
 		totalMessages: data.totalMessages,
@@ -143,6 +147,7 @@ async function getAllThreads() {
 			threadId,
 			members: data.members.length,
 			totalMessages: data.totalMessages,
+			createdAt: data.createdAt,
 			lastActivity: data.lastActivity
 		});
 	}
@@ -179,14 +184,14 @@ app.get("/api/count/:threadId", async (req, res) => {
 app.post("/api/count/:threadId/message", async (req, res) => {
 	const { threadId } = req.params;
 	const { userId, userName } = req.body;
-	
+
 	if (!userId) {
-		return res.status(400).json({ 
-			success: false, 
-			error: "userId is required" 
+		return res.status(400).json({
+			success: false,
+			error: "userId is required"
 		});
 	}
-	
+
 	try {
 		const member = await incrementMessageCount(threadId, userId, userName);
 		res.json({
@@ -207,7 +212,7 @@ app.post("/api/count/:threadId/message", async (req, res) => {
 app.get("/api/count/:threadId/ranking", async (req, res) => {
 	const { threadId } = req.params;
 	const limit = parseInt(req.query.limit) || 20;
-	
+
 	try {
 		const ranking = await getRanking(threadId, limit);
 		res.json({ success: true, data: ranking });
@@ -218,7 +223,7 @@ app.get("/api/count/:threadId/ranking", async (req, res) => {
 
 app.get("/api/count/:threadId/ranking/:userId", async (req, res) => {
 	const { threadId, userId } = req.params;
-	
+
 	try {
 		const result = await getUserRank(threadId, userId);
 		res.json({ success: true, data: result });
@@ -229,7 +234,7 @@ app.get("/api/count/:threadId/ranking/:userId", async (req, res) => {
 
 app.get("/api/count/:threadId/stats", async (req, res) => {
 	const { threadId } = req.params;
-	
+
 	try {
 		const stats = await getThreadStats(threadId);
 		res.json({ success: true, data: stats });
@@ -241,14 +246,14 @@ app.get("/api/count/:threadId/stats", async (req, res) => {
 app.delete("/api/count/:threadId", async (req, res) => {
 	const { threadId } = req.params;
 	const { confirm } = req.body;
-	
+
 	if (confirm !== "yes") {
 		return res.status(400).json({
 			success: false,
 			error: "Confirmation required: { confirm: 'yes' }"
 		});
 	}
-	
+
 	try {
 		const result = await resetThread(threadId);
 		res.json({ success: true, data: result });
@@ -259,7 +264,7 @@ app.delete("/api/count/:threadId", async (req, res) => {
 
 app.delete("/api/count/:threadId/user/:userId", async (req, res) => {
 	const { threadId, userId } = req.params;
-	
+
 	try {
 		const result = await resetUser(threadId, userId);
 		res.json({ success: true, data: result });
@@ -278,8 +283,8 @@ app.get("/api/count/threads", async (req, res) => {
 });
 
 app.use((req, res) => {
-	res.status(404).json({ 
-		success: false, 
+	res.status(404).json({
+		success: false,
 		error: "Route not found",
 		availableEndpoints: [
 			"GET /api/count/:threadId",
