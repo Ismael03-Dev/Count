@@ -164,6 +164,7 @@ app.get("/", (req, res) => {
 			"GET /api/count/:threadId/ranking": "Get ranking",
 			"GET /api/count/:threadId/ranking/:userId": "Get user rank",
 			"GET /api/count/:threadId/stats": "Get thread stats",
+			"POST /api/count/:threadId/backfill": "Replace thread data with a full history scan",
 			"DELETE /api/count/:threadId": "Reset thread",
 			"DELETE /api/count/:threadId/user/:userId": "Reset user",
 			"GET /api/count/threads": "Get all threads"
@@ -273,6 +274,49 @@ app.delete("/api/count/:threadId/user/:userId", async (req, res) => {
 	}
 });
 
+app.post("/api/count/:threadId/backfill", async (req, res) => {
+	const { threadId } = req.params;
+	const { members, createdAt } = req.body;
+
+	if (!Array.isArray(members)) {
+		return res.status(400).json({
+			success: false,
+			error: "members must be an array of { userId, name, count, firstMessage, lastMessage }"
+		});
+	}
+
+	try {
+		const cleanMembers = members
+			.filter(m => m && m.userId && typeof m.count === "number" && m.count > 0)
+			.map(m => ({
+				userId: String(m.userId),
+				name: m.name || "User",
+				count: m.count,
+				firstMessage: m.firstMessage || Date.now(),
+				lastMessage: m.lastMessage || Date.now()
+			}));
+
+		const totalMessages = cleanMembers.reduce((sum, m) => sum + m.count, 0);
+
+		const data = {
+			threadId,
+			members: cleanMembers,
+			totalMessages,
+			// createdAt = timestamp du plus ancien message retrouvé dans l'historique scanné
+			createdAt: createdAt || Date.now(),
+			lastActivity: Date.now()
+		};
+
+		await saveThreadData(threadId, data);
+		res.json({
+			success: true,
+			data: { threadId, totalMessages, totalMembers: cleanMembers.length, createdAt: data.createdAt }
+		});
+	} catch (error) {
+		res.status(500).json({ success: false, error: error.message });
+	}
+});
+
 app.get("/api/count/threads", async (req, res) => {
 	try {
 		const threads = await getAllThreads();
@@ -292,6 +336,7 @@ app.use((req, res) => {
 			"GET /api/count/:threadId/ranking",
 			"GET /api/count/:threadId/ranking/:userId",
 			"GET /api/count/:threadId/stats",
+			"POST /api/count/:threadId/backfill",
 			"DELETE /api/count/:threadId",
 			"DELETE /api/count/:threadId/user/:userId",
 			"GET /api/count/threads"
